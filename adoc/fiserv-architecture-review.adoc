@@ -51,7 +51,7 @@ image::../images/fiserv_prod.png[fiserv_prod,1000,1000,align="center"]
 
 = Introduction to High Availability
 
-== HA
+== Definitions and Clarification
 
 The words "High Availability", "Failover", and "clustering" are being used interchangeably nowadays and that causes architectural conversations to be mislead. It is important that we define
 what these terms means and provide a proper context on what they offer when using them for a Java EE application and with regards to the JBoss EAP container.
@@ -71,11 +71,70 @@ JBoss EAP supports high availability at several different levels using various c
 . Singleton MSC services
 . Singleton deployments
 
-*Clustering* is made available to JBoss EAP by the JGroups, Infinispan, and mod_cluster subsystems. The ha and full-ha profiles have these systems enabled. In JBoss EAP, these services start up and shut down on demand,
-but they will only start up if an application configured as distributable is deployed on the servers.
+== Clustering JBoss EAP 7
 
-There are two main caching policies using Infinispan that can setup: distributed vs replicated. You are highly encouraged to read about these strategies in the JBoss EAP 7 configuration guide and the SYNC vs ASYNC mode they
-can be configured with.
+*Clustering* is made available to JBoss EAP by the JGroups, Infinispan, and mod_cluster subsystems. The ha and full-ha profiles have these systems enabled. In JBoss EAP, these services start up and shut down on demand,
+but they will only start up if an application configured as distributable is deployed on the servers. Clustering is the act of grouping servers together to act as a single entity. We have to be clear and understand
+that clustering servers is not really failover, and its defnitely not load balancing. The act of using a single group of servers to achieve load balancing, failover and redundancy is clusteing, giving us then a Highly Available architecture.
+
+=== JGroups
+
+JGroups is a toolkit for reliable messaging and can be used to create clusters whose nodes can send messages to each other.
+The JGroups subsystem provides group communication support for high availability services in JBoss EAP. It allows you to configure named channels and protocol stacks as well as view runtime statistics for channels. The JGroups subsystem is
+available when using a configuration that provides high availability capabilities, such as the ha or full-ha profile in a managed domain, or the standalone-ha.xml or standalone-full-ha.xml configuration file for a standalone server.
+JBoss EAP is preconfigured with two JGroups stacks:
+
+. udp
+
+The nodes in the cluster use User Datagram Protocol (UDP) multicasting to communicate with each other. This is the default stack.
+
+. tcp
+
+The nodes in the cluster use Transmission Control Protocol (TCP) to communicate with each other. Although TCP tends to be slower than UDP, there are use cases for it, for example, when UDP is not available in a certain environment.
+You can use the preconfigured stacks or define your own to suit your system’s specific requirements.
+
+=== Infinispan
+
+Infinispan is a Java data grid platform that provides a JSR-107-compatible cache interface for managing cached data.
+The Infinispan subsystem provides caching support for JBoss EAP. It allows you to configure and view runtime metrics for named cache containers and caches.
+When using a configuration that provides high availability capabilities, such as the ha or full-ha profile in a managed domain, or the standalone-ha.xml or standalone-full-ha.xml configuration file for a standalone server,
+the Infinispan subsystem provides caching, state replication, and state distribution support. In non-high-availability configurations, the Infinispan subsystem provides local caching support.
+
+IMPORTANT: Infinispan is delivered as a private module in JBoss EAP to provide the caching capabilities of JBoss EAP. Infinispan is not supported for direct use by applications.
+
+Clustering can be configured in two different ways in JBoss EAP using Infinispan. The best method for your application will depend on your requirements. There is a trade-off between availability, consistency, reliability and scalability
+with each mode. Before choosing a clustering mode, you must identify what are the most important features of your network for you, and balance those
+
+==== Cache Modes
+
+*Replicated*
+
+Replicated mode automatically detects and adds new instances on the cluster. Changes made to these instances will be replicated to all nodes on the cluster. Replicated mode typically works best in small clusters because of the amount of information that has to be replicated over the network.
+Infinispan can be configured to use UDP multicast, which alleviates network traffic congestion to a degree.
+
+*Distributed*
+
+Distributed mode allows Infinispan to scale the cluster linearly. Distributed mode uses a consistent hash algorithm to determine where in a cluster a new node should be placed. The number of copies (owners) of information to be kept is configurable.
+There is a trade-off between the number of copies kept, durability of the data, and performance.
+
+The more copies that are kept, the more impact on performance,
+but the less likely you are to lose data in a server failure. The hash algorithm also works to reduce network traffic by locating entries without multicasting or storing metadata.
+
+You should consider using distributed mode as a caching strategy when the cluster size exceeds 6-8 nodes. With distributed mode, data is distributed to only a subset of nodes within the cluster, as opposed to all nodes.
+
+==== Synchronous and Asynchronous Replication
+
+Replication can be performed either in synchronous or asynchronous mode, and the mode chosen depends on your requirements and your application.
+
+*Synchronous replication*
+
+With synchronous replication, the thread that handles the user request is blocked until replication has been successful. When the replication is successful, a response is sent back to the client, and only then is the thread is released.
+Synchronous replication has an impact on network traffic because it requires a response from each node in the cluster. It has the advantage, however, of ensuring that all modifications have been made to all nodes in the cluster.
+
+
+*Asynchronous replication*
+
+With asynchronous replication, Infinispan uses a thread pool to carry out replication in the background. The sender does not wait for replies from other nodes in the cluster. However, cache reads for the same session will block until the previous replication completes so that stale data is not read. Replication is triggered either on a time basis or by queue size. Failed replication attempts are written to a log, not notified in real time.
 
 = Implementing High Availability with JBoss EAP 7 & Undertow
 
