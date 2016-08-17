@@ -31,7 +31,8 @@ provide a process by which the Red Hat JBoss EAP 7 containers can be deployed an
 
 = Current Architecture
 
-== section title
+== Situational Awareness
+
 The systems engineering team at Fiserv is responsible for setting the IT standards that the rest of the business units at Fiserv must follow. This also means
 that the container that is approved for usage is driven by the systems engineering team and must meet HA and Load Balancing capabilities and criteria before it is
 approved for development, QA and production usage.
@@ -40,6 +41,19 @@ Fiserv's systems engineering team provisions its VMs using VMware technologies a
 was the result of a previous migration from Solaris to RHEL 7. Lower Fiserv environments as expect have fewer Weblogic containers (as expected) than higher environments
 closer to production. Below we present a lower - development - environment and a prod like environment architecture setup where each Weblogic admin server manages a separate
 domain:
+
+== Architecture of Lower and Prod Like Environments
+
+The following two images show the architecture of two main types of environments that Fiserv's Systems Engineering team supports for its clients. The non production architecture
+
+The non production envrionment is usually used for development and testing. In both a non production like environment and a prod like environment the following constraints exist:
+
+. The current Apache HTTPD and F5 load balancers must be in the DMZ
+. The load balancers must be highly available
+. There has to be two clusters load balanced by a set of two different
+. In a maintenance type scenario, one load balancer set would be taken out of load for Weblogic server maintenance and the other set succombs to the same process once the maintenance is completed on the first set
+. The Weblogic servers and clusters sit in the protected area where firewall restrictions are less strict
+. One Weblogic admin server managers both Weblogic Clusters and resides in the protected area
 
 [[img-plcc-soap]]
 .Fiserv Non Production Architecture Per Business Unit
@@ -138,8 +152,9 @@ With asynchronous replication, Infinispan uses a thread pool to carry out replic
 
 = Implementing High Availability with JBoss EAP 7 & Undertow
 
-== section here
-1. load balancing with undertow
+== Load Balancing with Undertow
+
+1. Load Balancing With Undertow
 
  . undertow as a dynamic load balancer
  using default u get static LB, and using HA u get dynamic with mod cluster
@@ -152,15 +167,31 @@ and u configure the shared key on both the lb and the app server
 
  . undertow remains a part of the domain
 
+== Clustering with JGroups and Infinispan
+
 . clustering with jgroups and infinispan
    .. basic cluster with UDP , can switch to TCP with --> put link here
+   The change we made to the domain.xml on the domain controller to get UDP clustering to work, is to alter the full-ha profile and change this line from
+
+  <socket-binding name="jgroups-udp” interface=“private” port="55200" multicast-address="${jboss.default.multicast.address:230.0.0.4}" multicast-port="45688”/>
+
+TO
+
+  <socket-binding name="jgroups-udp" port="55200" multicast-address="${jboss.default.multicast.address:230.0.0.4}" multicast-port="45688”/>
+
+The same can be accomplished via CLI - please make sure you are editing the right sockets group - full-ha-sockets
+
+/socket-binding-group=full-ha-sockets/socket-binding=jgroups-udp:undefine-attribute(name=interface)
+
    .. clustering EJBs: https://access.redhat.com/solutions/136963
    .. clustering messaging subsystem, data rep vs shared store: http://www.mastertheboss.com/jboss-server/jboss-jms/jms-clustering-in-wildfly-and-jboss-eap
    .. http session replication - </distributable> --> https://access.redhat.com/solutions/24898
 
    https://access.redhat.com/sites/default/files/attachments/eap7_1.pdf
+   --> failover of the above resources
 
 . Failover of the domain controller: https://access.redhat.com/solutions/1247783
+
 
 = Desired Future Architecture
 
