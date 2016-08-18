@@ -18,7 +18,7 @@ ifdef::backend-pdf[]
 :source-highlighter: coderay
 endif::[]
 
-= Purpose
+== Purpose
 
 Fiserv has engaged Red Hat to assist them with an architectural review of their current Weblogic High Availability (HA) - Load Balance + Failover -
 setup with a desire to migration away from the Oracle provided Enterprise Edition container to Red Hat's latest EAP 7 Java EE container.
@@ -29,9 +29,9 @@ architectural requirements can be moved into Red Hat JBoss EAP 7 running on Red 
 In the rest of this document we will start by showing Fiserv's current architectural design, their target architecture and attempt to
 provide a process by which the Red Hat JBoss EAP 7 containers can be deployed and configured in the most automated fashion.
 
-= Current Architecture
+== Current Architecture
 
-== Situational Awareness
+=== Situational Awareness
 
 The systems engineering team at Fiserv is responsible for setting the IT standards that the rest of the business units at Fiserv must follow. This also means
 that the container that is approved for usage is driven by the systems engineering team and must meet HA and Load Balancing capabilities and criteria before it is
@@ -42,7 +42,7 @@ was the result of a previous migration from Solaris to RHEL 7. Lower Fiserv envi
 closer to production. Below we present a lower - development - environment and a prod like environment architecture setup where each Weblogic admin server manages a separate
 domain:
 
-== Architecture of Lower and Prod Like Environments
+=== Architecture of Lower and Prod Like Environments
 
 The following two images show the architecture of two main types of environments that Fiserv's Systems Engineering team supports for its clients. The non production architecture
 
@@ -63,9 +63,9 @@ image::../images/fiserv_non_prod.png[fiserv_prod,1000,1000,align="center"]
 .Fiserv Production Architecture Per Business Unit
 image::../images/fiserv_prod.png[fiserv_prod,1000,1000,align="center"]
 
-= Introduction to High Availability
+== Introduction to High Availability
 
-== Definitions and Clarification
+=== Definitions and Clarification
 
 The words "High Availability", "Failover", and "clustering" are being used interchangeably nowadays and that causes architectural conversations to be mislead. It is important that we define
 what these terms means and provide a proper context on what they offer when using them for a Java EE application and with regards to the JBoss EAP container.
@@ -85,13 +85,13 @@ JBoss EAP supports high availability at several different levels using various c
 . Singleton MSC services
 . Singleton deployments
 
-== Clustering JBoss EAP 7
+=== Clustering JBoss EAP 7
 
 *Clustering* is made available to JBoss EAP by the JGroups, Infinispan, and mod_cluster subsystems. The ha and full-ha profiles have these systems enabled. In JBoss EAP, these services start up and shut down on demand,
 but they will only start up if an application configured as distributable is deployed on the servers. Clustering is the act of grouping servers together to act as a single entity. We have to be clear and understand
 that clustering servers is not really failover, and its defnitely not load balancing. The act of using a single group of servers to achieve load balancing, failover and redundancy is clusteing, giving us then a Highly Available architecture.
 
-=== JGroups
+==== JGroups
 
 JGroups is a toolkit for reliable messaging and can be used to create clusters whose nodes can send messages to each other.
 The JGroups subsystem provides group communication support for high availability services in JBoss EAP. It allows you to configure named channels and protocol stacks as well as view runtime statistics for channels. The JGroups subsystem is
@@ -107,7 +107,7 @@ The nodes in the cluster use User Datagram Protocol (UDP) multicasting to commun
 The nodes in the cluster use Transmission Control Protocol (TCP) to communicate with each other. Although TCP tends to be slower than UDP, there are use cases for it, for example, when UDP is not available in a certain environment.
 You can use the preconfigured stacks or define your own to suit your system’s specific requirements.
 
-=== Infinispan
+==== Infinispan
 
 Infinispan is a Java data grid platform that provides a JSR-107-compatible cache interface for managing cached data.
 The Infinispan subsystem provides caching support for JBoss EAP. It allows you to configure and view runtime metrics for named cache containers and caches.
@@ -119,7 +119,7 @@ IMPORTANT: Infinispan is delivered as a private module in JBoss EAP to provide t
 Clustering can be configured in two different ways in JBoss EAP using Infinispan. The best method for your application will depend on your requirements. There is a trade-off between availability, consistency, reliability and scalability
 with each mode. Before choosing a clustering mode, you must identify what are the most important features of your network for you, and balance those
 
-==== Cache Modes
+===== Cache Modes
 
 *Replicated*
 
@@ -136,7 +136,7 @@ but the less likely you are to lose data in a server failure. The hash algorithm
 
 You should consider using distributed mode as a caching strategy when the cluster size exceeds 6-8 nodes. With distributed mode, data is distributed to only a subset of nodes within the cluster, as opposed to all nodes.
 
-==== Synchronous and Asynchronous Replication
+===== Synchronous and Asynchronous Replication
 
 Replication can be performed either in synchronous or asynchronous mode, and the mode chosen depends on your requirements and your application.
 
@@ -151,11 +151,11 @@ Synchronous replication has an impact on network traffic because it requires a r
 With asynchronous replication, Infinispan uses a thread pool to carry out replication in the background. The sender does not wait for replies from other nodes in the cluster. However, cache reads for the same session will block until the previous replication completes so that stale data is not read.
 Replication is triggered either on a time basis or by queue size. Failed replication attempts are written to a log, not notified in real time.
 
-= Implementing High Availability with JBoss EAP 7 & Undertow
+== Implementing High Availability with JBoss EAP 7 & Undertow
 
-== Load Balancing with Undertow
+=== Load Balancing with Undertow
 
-=== Undertow Architecture With Mod Cluster
+==== Undertow Architecture With Mod Cluster
 
 Undertow is a generic and full-featured web server, capable of replacing traditional web server software such as Apache Httpd and Microsoft IIS for most use cases. As such it includes a web proxy component that can do load balancing.
 Undertow is also a web server built specifically to support Java EE developers and administrators and provides most features from Java Web Containers such as Apache Tomcat. Among then, two are of special relevance to EAP clustering:
@@ -176,7 +176,7 @@ A mod_cluster enhanced web proxy such as Undertow sends advertisement messages t
 The architecture is fault-tolerant: there can be multiple mod_cluster clients on the same network; that is, multiple web proxies acting as load balancers. Back-end web servers receive the advertisement messages from all web proxies and replies to them. The load balancer is NOT a single point of failure.
 For networks where multicast traffic is not allowed, advertising is disabled on the mod_cluster client. Each back-end web server is then manually configured with a list of web proxies.
 
-=== Undertow as a Dynamic Load Balancer
+==== Undertow as a Dynamic Load Balancer
 
 The following section assumes that knowledge of domain setup with EAP is established. In the rest of this section we are assuming the following scenario:
 
@@ -194,7 +194,7 @@ The motivation behind the use of the `HA` profile is crucial to obtain a dynamic
 If the mod_cluster subsystem is not available then the algorithms that provide us with automatic rebalancing of load are not available and servers can not be added and removed in and out
 of load in an automated fashion that does not require load balancer reboot. A comparison between static and dynamic load balancing algorithms can be located here: https://www.quora.com/What-is-the-difference-between-static-balancing-and-dynamic-balancing[Dynammic vs Static Load Balancing]
 
-==== Setting Up Undertow Load Balancer with UDP
+===== Setting Up Undertow Load Balancer with UDP
 Configuring Undertow as a dynamic load balancer involves the following high-level steps:
 
 • Add a mod_cluster filter to the default Undertow server.
@@ -243,7 +243,7 @@ To configure the key on the load balancer server instance:
 
 NOTE: the previous commands affect different EAP server instances: the first one, on the modcluster subsystem, affects EAP instances that are members of a cluster. The second one, on the undertow subsystem, affects the EAP instance that acts as the load balancer.
 
-==== Setting Up Undertow Load Balancer with TCP
+===== Setting Up Undertow Load Balancer with TCP
 
 During the architectural discussions at Fiserv, it was still unclear whether the load balancers were going to remain in the DMZ or be brought into the protected area. Keeping the load balancers in the DMZ means that the
 UDP traffic will not be allowed between the Undertow load balancers and the JBoss EAP application servers. An alternative solution was proposed to use TCP for the connections between the load balancers and the application containers. This solution
@@ -286,12 +286,12 @@ IMPORTANT: When we setup load balancing with either UDP or TCP, we were always u
 The above bug seems to be coming from the infinispan replication, and might not be related to the protocol used when setting up Undertow load balacing. However that can not be ruled out. One bug was found open with the same error stack
 seen, and it is located here: https://issues.jboss.org/browse/JBEAP-3696[Replication Timeout When Handling Request]. At the time of writing that bug was still unresolved.
 
-== Failover with JGroups and Infinispan
+=== Failover with JGroups and Infinispan
 
 Failover in JBoss EAP 7 is ensured by JGroups and Infinispan. JGroups as described in previous sections is the prootocol that allows servers to come together in single cluster. Infinispan is the JBoss technology that allows
 data to be replicated or distributed across servers in a cluster.
 
-=== Failover Communication Protocols
+==== Failover Communication Protocols
 
 .Adjusting UDP Configurations
 
@@ -322,7 +322,7 @@ The above can be accomplished by running the following CLIs on the profiles that
 JGroups can be configured to be used with TCP instead of UDP. In Fiserv's case, there is no restriction on the use of UDP in the protected area. We are including a reference to instructions on how
 to get the TCP communications switched should the requirements change: https://access.redhat.com/documentation/en/red-hat-jboss-enterprise-application-platform/7.0/paged/configuration-guide/chapter-21-configuring-high-availability[JBoss EAP 7 Configuration Guide Section 21.2.2]
 
-=== Failover for Java EE Components
+==== Failover for Java EE Components
 
 There are three main areas and concepts in the Java EE that organizations, architects and developers wish to have a failover strategy for. Those are but not limited to:
 
@@ -341,7 +341,7 @@ The following Red Hat knowledge article explains step by step how EJBs can be cl
 
 .Failover for HTTP Sessions
 
-Session replication is dependndent upon a stable/working cluster. Issues (i.e., long GC pauses, dropped multicast packets, high CPU, etc) that have an adverse effect on clustering will also have an adverse effect on session replication. With
+Session replication is dependent upon a stable/working cluster. Issues (i.e., long GC pauses, dropped multicast packets, high CPU, etc) that have an adverse effect on clustering will also have an adverse effect on session replication. With
 those potential issues under control the following knowledge article describes how session failover can be achieved:
 https://access.redhat.com/solutions/24898[Enabling Session Replication in JBoss EAP]
 
@@ -385,7 +385,7 @@ in HornetQ (EAP 6) and the minor change needed for Artermis (EAP 7). The blog po
 
 .Failover of the Domain Controller
 
-There has been many discussions at Fiserv regarding the necessity of having a domain contoller for failover. The arguments for and against were all valid and we highlight some of them here:
+There has been many discussions at Fiserv regarding the necessity of having a domain controller for failover. The arguments for and against were all valid and we highlight some of them here:
 
 *Arguments Pro Domain Controller Failover*
 
@@ -400,7 +400,7 @@ There has been many discussions at Fiserv regarding the necessity of having a do
 
 The following Red Hat knowledge base article highlights how a backup domain controller can be configured - https://access.redhat.com/solutions/1247783[High Availability of the Domain Controller]
 
-= Desired Future Architecture
+== Desired Future Architecture
 
 The following image depicts the future architecture that Fiserv plans to implement. There are still on going discussions as to whether using F5 as a load balancing technology between the DMZ and protected
 zone. If the F5 is selected then the Undertow load balancers will reside in the protected area as well, and the communication protocol between them and the JBoss EAP application servers will be over UDP.
@@ -410,15 +410,18 @@ zone. If the F5 is selected then the Undertow load balancers will reside in the 
 image::../images/desired_EAP7_architecture.png[desired_eap_arch,1000,1000,align="center"]
 
 
-= Installation Mechanisms & Configuration Considerations
+== Installation Mechanisms & Configuration Considerations
 
-COTS Install:
+Fiserv's goal is to get to a fully automated installation of a domain controller and remote hosts form the groun up. We discussed various ways and techologies that could assist with this setup and in this section
+we highlight the various items that need to be considered when tackling this challenge:
 
-## Build an RPM + Channel
+=== COTS Installation
 
-- RPM installs jboss eap 7 zip file on the filesystems as is
+The JBoss EAP 7 COTS installation will be done via a custom built RPM. The below are the considerations needed when doing a custom RPM based installation:
+
+- RPM installs jboss eap 7 zip file on the filesystems  - removes all unncessary folders/files before packaging
 - RPM creates a custom log directory
-- RPM creates a customer deploy directory
+- RPM creates a custome deploy directory
 - RPM registers the startup with etcd/init.d
 - RPM adds SELinux Policy
 - RPM lays down the jboss-eap.conf file that has all variables defined
@@ -427,16 +430,121 @@ COTS Install:
 	*multicast address for jgroups
 	*location of custom deployments directory (already predefined, just replace)
 	*location of custom server log directory (already predefined just replace)
+- RPM would have the classpath defined for the wily JARs
 -RPM startup script will pass in all the required -D jvm flags from above property list and the management IP as well as the bind IP. Startup script would have to specify the --backup flag if the domain controller is being setup with failover
 - RPM will have a polished domain.xml and host.xml that do not have the default shipped server groups, or default servers or the non full-ha or non ha profiles (remove default and full profiles)
 
+=== Initial Startup
 
- ## Bring everything Up
+At initial startup it was discussed that all servers will come up as domain controller that are not running any servers. The next steps would be:
+- All the servers are running serverless as a domain controller with no host attached
+- The servers can now be patched if necessary via the CLI path command. See the power point slides for the patching strategy for EAP 6 and later versions.
+- CLI into each separate host and run the CLI command to make it a remote host:
 
- - All the servers are running serverless as a domain controller with no host attached
- - CLI into each separate host and run the CLI command to make it a remote host:
- ='/host=master:write-remote-domain-controller(port=9999, host={DC_IP})'
+`/host=master:write-remote-domain-controller(port=9999, host={DC_IP})`
 
- If a remote host ever needs to be converted back to a domain controller you would run: /host=master:write-local-domain-controller()
+- restart all the remote hosts ((the JVM process for the host controller and the running server instances))
 
- - restart all the remote hosts
+=== Application Server Instance Setup
+
+Once we have a working domain controller, and a number of hosts connected to it, the next step would be to setup server instance using the full-ha profile clones on each of these hosts.
+
+Below is the general flow for this setup:
+
+- Create a clone of the full-ha and ha profiles - use the CLI profile clone command
+- Create 2 server groups and attach each server group to a profile
+- For each host, we will create a server instance and make it part of a group -- make sure you check the auto-start
+- Configure Rsyslog JBoss EAP appender to communicate with the remote syslog server. If the remote syslog server is known and unique then it can have its configuration pre-canned in the RPM.
+
+=== Load Balancing and Clustering Setup
+
+Once the application servers are created under clones of the full-ha profile and are up and running, the next step would be to setup Undertow server instance on the load balancer hosts .
+- Setup Load Balancer - creating 2 undertow server instances in each of the HA group clones
+- Set the multicast IP address per cluster - use default for one and specify other for the second cluster
+- The multicast IP must be set at both the JGroups subsystem and the undertow subsystem - verify that the private interface for UDP is undefined: `/socket-binding-group=full-ha-sockets/socket-binding=jgroups-udp:undefine-attribute(name=interface)`
+- Restart EAP hosts  (the JVM process for the host controller and the running server instances)
+
+* Manual Step*
+- Clustering Verification - Look for the log line that shows a cluster view of # of servers in the cluster
+- Load balancing verification - look for the log lines that show connections success to the load balancer IP
+
+=== Deployments
+
+The Fiserv systems engineering team is required to have the MySQL and Oracle JDBC Jars deployed to all servers in a domain. In JBoss EAP 7 this is done by deploying to a server group. This phase can be automated
+by using the `deploy` command in CLI.
+
+===  Management Console
+
+- Setup the management console and interface to authN/authZ against IDM/LDAP. This can be done using the following knowledge article from Red Hat:
+https://access.redhat.com/solutions/148823[Authenticating Management Console Against LDAP]
+
+NOTE: This setup makes all the management interfaces authenticate against LDAP. This means that CLI connections would also require authentication and authorization. It is recommended to do this step once all the domain
+setup is complete
+
+- restart/reload domain controller
+
+=== SSL For Web Connector
+
+The next step is to setup the SSL connector in Undertow so that HTTPS is enabled:
+
+- Setup Undertow web connector to use SSL
+- Provide path to SSL certificates - could be stored on the shared mount point
+- Certificates need to have the right permissions for the user running the JBoss process to be able to read them
+- Restart EAP hosts (Optional, but recommended) (the JVM process for the host controller and the running server instances)
+
+=== Deploy Test Application
+
+During this week's enagement we deployed a sample application that contains a clusterd EJB and used it to test clustering and session failover. It was discussed that this application can be
+deployed upon environment setup to test that clustering and other configured functionalities such as HTTPS are working.
+
+The idea is that we:
+
+- Use the sample EJB + HTTP session cluster application
+- Deploy the same application: connect to domain controller, run deploy command (local path to the WAR)
+- Verify failover, verify SSL --> then close 8080
+
+=== Server Suspension
+
+Server suspension is a feature that the Systems engineering team and other teams will heavily use when doing off band patches and maintentance. The idea behind server suspension is that
+it allows a server to be put in a suspended state, where it allows all current requests to complete before user sessions are terminated. A timeout could also be set to allow all requests to complete
+at their own leisure.
+
+The lifceycle behind a server suspend call is the following:
+
+*Undertow:* The Undertow subsystem will wait for all requests to finish.
+
+*mod_cluster:* The mod_cluster subsystem will notify the load balancer that the server is suspending in the PRE_SUSPEND phase.
+
+*EJB:* The EJB subsystem will wait for all remote EJB requests and MDB message deliveries to finish. Delivery to MDBs is stopped in the PRE_SUSPEND phase. EJB timers are suspended, and missed timers will be activated when the server is resumed.
+
+*EE Concurrency:* The server will wait for all active jobs to finish. All queued jobs will be skipped. Currently, since EE Concurrency does not have persistence, those queued jobs that were skipped will be lost.
+
+*Batch:* The server will stop all running jobs within the timeout period and defer all scheduled jobs.
+
+To Check the suspend state for a domain server with CLI  run:
+
+`/host={HOST_NAME}/server=server-one:read-attribute(name=suspend-state)``
+
+*Suspend*
+
+Use the following management CLI commands to suspend the server, specifying the timeout value, in seconds, for the server to wait for active requests to complete. The default is 0, which will suspend immediately.
+A value of -1 will cause the server to wait indefinitely for all active requests to complete.
+
+Each example waits up to 60 seconds for requests to complete before suspending.
+
+Suspend a standalone server.
+
+`:suspend(timeout=60)`
+
+=== JMS Resources Setup
+
+The Fiserv systems engineering team has expressed interest in being able to create JMS resources.
+
+Queues and topics can be created similar to the following command:
+
+`/profile=full-ha/subsystem=messaging-activemq/server=default/jms-queue=MyQueue:add(entries=["java:/jms/myQueue"])`
+
+Whehter a Queue and a Toopic are exposed internal or external to the JVM depends on what connection factories are used to connect to the server. To access
+the queue remotely, developers must connect to the remote connection factory and then access the Queue via its jndi
+
+The command to create a topic is similar. Replace the `jms-queue` part with `jms-topic`
