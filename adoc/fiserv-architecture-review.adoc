@@ -55,11 +55,11 @@ The non production envrionment is usually used for development and testing. In b
 . The Weblogic servers and clusters sit in the protected area where firewall restrictions are less strict
 . One Weblogic admin server managers both Weblogic Clusters and resides in the protected area
 
-[[img-plcc-soap]]
+[[img-fiserv-non-prod]]
 .Fiserv Non Production Architecture Per Business Unit
 image::../images/fiserv_non_prod.png[fiserv_prod,1000,1000,align="center"]
 
-[[img-plcc-soap]]
+[[img-fiserv-prod]]
 .Fiserv Production Architecture Per Business Unit
 image::../images/fiserv_prod.png[fiserv_prod,1000,1000,align="center"]
 
@@ -98,11 +98,11 @@ The JGroups subsystem provides group communication support for high availability
 available when using a configuration that provides high availability capabilities, such as the ha or full-ha profile in a managed domain, or the standalone-ha.xml or standalone-full-ha.xml configuration file for a standalone server.
 JBoss EAP is preconfigured with two JGroups stacks:
 
-. udp
+.UDP
 
 The nodes in the cluster use User Datagram Protocol (UDP) multicasting to communicate with each other. This is the default stack.
 
-. tcp
+.TCP
 
 The nodes in the cluster use Transmission Control Protocol (TCP) to communicate with each other. Although TCP tends to be slower than UDP, there are use cases for it, for example, when UDP is not available in a certain environment.
 You can use the preconfigured stacks or define your own to suit your system’s specific requirements.
@@ -148,55 +148,295 @@ Synchronous replication has an impact on network traffic because it requires a r
 
 *Asynchronous replication*
 
-With asynchronous replication, Infinispan uses a thread pool to carry out replication in the background. The sender does not wait for replies from other nodes in the cluster. However, cache reads for the same session will block until the previous replication completes so that stale data is not read. Replication is triggered either on a time basis or by queue size. Failed replication attempts are written to a log, not notified in real time.
+With asynchronous replication, Infinispan uses a thread pool to carry out replication in the background. The sender does not wait for replies from other nodes in the cluster. However, cache reads for the same session will block until the previous replication completes so that stale data is not read.
+Replication is triggered either on a time basis or by queue size. Failed replication attempts are written to a log, not notified in real time.
 
 = Implementing High Availability with JBoss EAP 7 & Undertow
 
 == Load Balancing with Undertow
 
-1. Load Balancing With Undertow
+=== Undertow Architecture With Mod Cluster
 
- . undertow as a dynamic load balancer
- using default u get static LB, and using HA u get dynamic with mod cluster
-doing dynamic is better: https://www.quora.com/What-is-the-difference-between-static-balancing-and-dynamic-balancing
+Undertow is a generic and full-featured web server, capable of replacing traditional web server software such as Apache Httpd and Microsoft IIS for most use cases. As such it includes a web proxy component that can do load balancing.
+Undertow is also a web server built specifically to support Java EE developers and administrators and provides most features from Java Web Containers such as Apache Tomcat. Among then, two are of special relevance to EAP clustering:
+• AJP protocol support: The AJP protocol is a binary replacement for the text-based HTTP protocol. It also employs long-lived persistent connections, while HTTP connections are either single-request or short-lived (when using the HTTP 1.1 Keep-Alive feature).
+AJP was designed to lower the overhead imposed by a front-end web server on users accessing a Java Web Container. The idea is simple: a web browser uses HTTP to connect to the web proxy, and the web proxy uses AJP to connect to the back-end application servers.
+• mod_cluster protocol support: The mod_cluster protocol allows a web proxy to dynamically discover back-end web servers and the applications made available by each, allowing a true dynamic environment. It also employs an additional HTTP connection to relay
+load metrics from each back-end application server to the web proxy so it can make better load-balancing decisions.
 
-the filters have to be created on the undertow subsystem in the load balancer container
+Traditional web load balancer software requires static configuration: each back-end web server's connection details have to be manually configured on the load balancer, and it keeps trying to connect to failed back-end web servers, generating more network overhead.
+Mod_Cluster however does it differently. mod_cluster builds the back-end web server list dynamically and learns about new cluster members, new deployed applications, or failed cluster members without needing manual configuration.
+The mod_cluster protocol requires a client component, that should be implemented by the load balancer, and a server part, that is implemented by the EAP 7 modcluster subsystem. The following figure illustrates a mod_cluster enhanced web proxy acting as a load balancer:
 
-the multicast is done on both the LB and the app containers in mod cluster subsystem
-and u configure the shared key on both the lb and the app server
+[[img_undertow_dynamic]]
+.Undertow as a Dynamic Load Balancer
+image::../images/dynamic_mod_cluster.png[dynamic_mod_cluster,1000,1000,align="center"]
 
- . undertow remains a part of the domain
+A mod_cluster enhanced web proxy such as Undertow sends advertisement messages to all back-end web servers that are listening to the configured multicast address and port. Back- end web servers reply by sending the load balancer their connection parameters and deployed application context paths.
+The architecture is fault-tolerant: there can be multiple mod_cluster clients on the same network; that is, multiple web proxies acting as load balancers. Back-end web servers receive the advertisement messages from all web proxies and replies to them. The load balancer is NOT a single point of failure.
+For networks where multicast traffic is not allowed, advertising is disabled on the mod_cluster client. Each back-end web server is then manually configured with a list of web proxies.
 
-== Clustering with JGroups and Infinispan
+=== Undertow as a Dynamic Load Balancer
 
-. clustering with jgroups and infinispan
-   .. basic cluster with UDP , can switch to TCP with --> put link here
-   The change we made to the domain.xml on the domain controller to get UDP clustering to work, is to alter the full-ha profile and change this line from
+The following section assumes that knowledge of domain setup with EAP is established. In the rest of this section we are assuming the following scenario:
 
-  <socket-binding name="jgroups-udp” interface=“private” port="55200" multicast-address="${jboss.default.multicast.address:230.0.0.4}" multicast-port="45688”/>
+. One domain controller for the EAP 7 domain
+. One server group called `clustered` that stretches two hosts: `host1` & `host2`
+. The `clustered` server group uses the `full-ha` profile
+. Each host is running 1 server: `server_host1` and `server_host2`
+. Communication between the servers is over UDP via JGroups and the servers are startup show a clustered view of 2
+. Communication between the Undertow load balancer and the App containers will be over UDP
+. The Undertow load balancer server is part of the managed domain
+. The Undertow load balancer server belong to the `load_balancer` group
+. The `load_balancer` group uses the `HA` profile
 
-TO
+The motivation behind the use of the `HA` profile is crucial to obtain a dynamic load balancer. If the default profile is used instead, the the mod_cluster subsystem is not available.
+If the mod_cluster subsystem is not available then the algorithms that provide us with automatic rebalancing of load are not available and servers can not be added and removed in and out
+of load in an automated fashion that does not require load balancer reboot. A comparison between static and dynamic load balancing algorithms can be located here: https://www.quora.com/What-is-the-difference-between-static-balancing-and-dynamic-balancing[Dynammic vs Static Load Balancing]
 
-  <socket-binding name="jgroups-udp" port="55200" multicast-address="${jboss.default.multicast.address:230.0.0.4}" multicast-port="45688”/>
+==== Setting Up Undertow Load Balancer with UDP
+Configuring Undertow as a dynamic load balancer involves the following high-level steps:
 
-The same can be accomplished via CLI - please make sure you are editing the right sockets group - full-ha-sockets
+• Add a mod_cluster filter to the default Undertow server.
+• Configure the advertisement settings in both the undertow and the modcluster subsystems.
+NOTE: Either configure multicast parameters on both subsystems, or disable advertise in the undertow subsystem and configure a proxy list on the modcluster subsystem (This refers to TCP and is presented in the following section)
 
+These steps are detailed below, using EAP CLI commands as examples.
+
+.Add the mod_cluster Filter to Undertow
+
+The default undertow subsystem configuration does NOT include a mod_cluster filter, even in the ha and full-ha clustered EAP profiles. This filter has to be created and configured to use the correct multicast parameters by referring to a socket-binding.
+To add the mod_cluster filter and configure it to default EAP settings, use the following command:
+
+```
+/profile=ha/subsystem=undertow/configuration=filter/mod_cluster=lb:add(management-socket-binding=http, advertise-socket-binding=modcluster)
+```
+
+The two attributes required by a mod_cluster filter are:
+
+• management-socket-binding: informs Undertow where to receive connection information and load balance metrics from back-end web servers. It should point to the socket-binding where EAP receives HTTP requests, which is http by default.
+• advertise-socket-binding informs Undertow where to send advertisement messages, that is, the multicast address and UDP port, by referring to a socket-binding name.
+
+After creating the filter, it should be enabled in the desired Undertow (virtual) hosts:
+
+```
+/profile=ha/subsystem=undertow/server=default-server/host=default-host/filter-ref=lb:add
+```
+
+NOTE: Notice lb is the name assigned to the mod_cluster filter defined in the previous command.
+
+.Configure Advertise Using Multicast
+Socket binding groups ha-sockets and full-ha-sockets already define the modcluster socket binding, which uses the multicast address 224.0.1.105 and port 23364. The undertow subsystem uses this socket binding to know where to send advertise messages. The modcluster subsystem uses the same socket binding to know where to listen for advertise messages.
+It is recommended to change the multicast address to prevent undesired EAP instances to try to become load balancers for the clustered EAP server instances.
+It is also recommended to configure an advertise key shared by the mod_cluster client and server. To configure the advertise key on the application server instances, that is, on the cluster members:
+
+```
+/profile=full-ha/subsystem=modcluster/mod_cluster-config=configuration:write-attribute(name=advertise-security-key,value=secret)
+```
+IMPORTANT: If you are setting up multiple Undertow load balancers in the same domain, it is very crucial that each cluster load balancer by a separate undertow use its own mutlicast IP in the JGroups AND mod_cluster subsystems. This will prevent race conditions on the load balancers, and will avoid servers from forming a failover cluster via JGroups with unwanted servers.
+
+To configure the key on the load balancer server instance:
+
+```
+/profile=ha/subsystem=undertow/configuration=filter/mod_cluster=lb:write-attribute(name=security-key,value=secret)
+```
+
+NOTE: the previous commands affect different EAP server instances: the first one, on the modcluster subsystem, affects EAP instances that are members of a cluster. The second one, on the undertow subsystem, affects the EAP instance that acts as the load balancer.
+
+==== Setting Up Undertow Load Balancer with TCP
+
+During the architectural discussions at Fiserv, it was still unclear whether the load balancers were going to remain in the DMZ or be brought into the protected area. Keeping the load balancers in the DMZ means that the
+UDP traffic will not be allowed between the Undertow load balancers and the JBoss EAP application servers. An alternative solution was proposed to use TCP for the connections between the load balancers and the application containers. This solution
+was also tested in the protected area without moving the load balancers to the DMZ to illustrate the concept. Below are the steps taken:
+
+An Undertow dynamic load balancer can be configured to NOT use multicast by disabling advertise on the mod_cluster filter. This is done by setting the advertise-frequency attribute to zero and the advertise-socket-binding to a socket binding that uses a private interface.
+
+NOTE: There should be a way to set the socket-binding attribute to null. This is an aspect that should be raised with Red Hat GSS.
+
+The below commands show how this can be done on the load balancer instance using the HA profile:
+
+```
+/profile=ha/subsystem=undertow/configuration=filter/mod_cluster=lb:write-attribute(name=advertise-frequency,value=0)
+/profile=ha/subsystem=undertow/configuration=filter/mod_cluster=lb:write-attribute(name=advertise-socket-binding,modcluster)
+```
+
+Advertise also has to be disabled in cluster members modcluster subsystem so they are not
+listening for advertisement messages anymore. The following commands enable that:
+
+```
+/profile=full-ha/subsystem=modcluster/mod_cluster-config=configuration:write-attribute(name=advertise,value=false)
+```
+
+Cluster members now require a proxy list to know which mod_cluster load balancer they should send connection parameters and application status to. Each load-balancer instance has to be configured as an outbound socket binding. Assuming a single load balancer instance:
+
+```
+/socket-binding-group=full-ha-sockets/remote-destination-outbound-socket-binding=lb:add(host={IP_OF_LOAD_BALANACER_HOST}, port=8080)
+```
+
+The port in the outbound socket binding is the HTTP port of the load balancer EAP server instance. These socket bindings are then used to configure the proxies list on the modcluster subsystem:
+
+```
+/profile=full-ha/subsystem=modcluster/mod_cluster-config=configuration:write-attribute(name=proxies,value=[lb])
+```
+In the previous example, lb is the name that was assigned to the outbound socket binding.
+
+In a final step, it is recommended that all the EAP hosts running EAP servers and the EAP host running the undertow load balancer be restarted.
+
+IMPORTANT: When we setup load balancing with either UDP or TCP, we were always using failover of HTTP session, EJBs etc with the UDP protocol. While failover was tested successfully when Undertow was setup with UDP, it failed with TCP.
+The above bug seems to be coming from the infinispan replication, and might not be related to the protocol used when setting up Undertow load balacing. However that can not be ruled out. One bug was found open with the same error stack
+seen, and it is located here: https://issues.jboss.org/browse/JBEAP-3696[Replication Timeout When Handling Request]. At the time of writing that bug was still unresolved.
+
+== Failover with JGroups and Infinispan
+
+Failover in JBoss EAP 7 is ensured by JGroups and Infinispan. JGroups as described in previous sections is the prootocol that allows servers to come together in single cluster. Infinispan is the JBoss technology that allows
+data to be replicated or distributed across servers in a cluster.
+
+=== Failover Communication Protocols
+
+.Adjusting UDP Configurations
+
+JGroups uses UDP by default. In JBoss EAP 6, servers that are started in the same subnet with the same UDP multicast IP address join a cluster automatically. It seems
+however that this behavior has change with JBoss EAP 7. The JGroups UDP multicast is configured to use the "private" IP address, i.e the local loopback. This prevents
+servers from automatically joining clusters on the same multicast and the cluster view would never reflect the numbers of servers we want to cluster. The fix is to allow multicasting to
+occur on the public interface:
+
+The XML in domain.xml for the full-ha profile would look like this:
+```
+<socket-binding name="jgroups-udp” interface=“private” port="55200" multicast-address="${jboss.default.multicast.address:230.0.0.4}" multicast-port="45688”/>
+```
+
+The target XML must look like so:
+
+```
+<socket-binding name="jgroups-udp" port="55200" multicast-address="${jboss.default.multicast.address:230.0.0.4}" multicast-port="45688”/>
+```
+
+The above can be accomplished by running the following CLIs on the profiles that use jgroups, in our case the full-ha profile for our server instances:
+
+```
 /socket-binding-group=full-ha-sockets/socket-binding=jgroups-udp:undefine-attribute(name=interface)
+```
 
-   .. clustering EJBs: https://access.redhat.com/solutions/136963
-   .. clustering messaging subsystem, data rep vs shared store: http://www.mastertheboss.com/jboss-server/jboss-jms/jms-clustering-in-wildfly-and-jboss-eap
-   .. http session replication - </distributable> --> https://access.redhat.com/solutions/24898
+.Using JGroups with TCP instead UDP:
 
-   https://access.redhat.com/sites/default/files/attachments/eap7_1.pdf
-   --> failover of the above resources
+JGroups can be configured to be used with TCP instead of UDP. In Fiserv's case, there is no restriction on the use of UDP in the protected area. We are including a reference to instructions on how
+to get the TCP communications switched should the requirements change: https://access.redhat.com/documentation/en/red-hat-jboss-enterprise-application-platform/7.0/paged/configuration-guide/chapter-21-configuring-high-availability[JBoss EAP 7 Configuration Guide Section 21.2.2]
 
-. Failover of the domain controller: https://access.redhat.com/solutions/1247783
+=== Failover for Java EE Components
 
+There are three main areas and concepts in the Java EE that organizations, architects and developers wish to have a failover strategy for. Those are but not limited to:
+
+. Enterprise Java Beans
+. HTTP Sessions
+. Java Messaging
+
+The following sections will provide the resources to allow failover for all of these components.
+
+.Failover for Enterprise Java Beans
+
+EJBs are not clustered by default. To have loadbalancing and failover features, if a standalone client invokes EJB's, it is necessary to mark the application as clustered and configure the server and client appropriately.
+This can be done by adding the annotation @org.jboss.ejb3.annotation.Clustered to the EJB class or additional configuration in the jboss-ejb3.xml deployment descriptor.
+
+The following Red Hat knowledge article explains step by step how EJBs can be clustered in an EAP 7 environment: https://access.redhat.com/solutions/136963[Clustering EJBs]
+
+.Failover for HTTP Sessions
+
+Session replication is dependndent upon a stable/working cluster. Issues (i.e., long GC pauses, dropped multicast packets, high CPU, etc) that have an adverse effect on clustering will also have an adverse effect on session replication. With
+those potential issues under control the following knowledge article describes how session failover can be achieved:
+https://access.redhat.com/solutions/24898[Enabling Session Replication in JBoss EAP]
+
+.Failover of Java Messaging Components: Queues & Topics
+
+Apache ActiveMQ Artemis is the JBoss component that implements the Java EE specification for JMS.
+When considering setting up failover for JMS components the main thing to decide on is whether to use data replication or a shared store. Below is an explanation of the two different strategies:
+
+*Data Replication*
+
+When using replication, the live and the backup servers do not share the same data directories, all data
+synchronization is done over the network. Therefore all (persistent) data received by the live server
+will be duplicated to the backup.
+If the live server is cleanly shutdown, the backup server will activate and clients will failover to
+backup. This behavior is pre-determined and is therefore not configurable when using data
+replication.
+Upon startup the backup server will first need to synchronize all existing data from the live server
+before replacing it. Unlike shared storage, a replicating backup will not be fully operational
+immediately after startup. The time it will take for the synchronization to happen depends on the
+amount of data to be synchronized and the network speed.
+
+*Shared Store*
+This style of high availability differs from data replication in that it requires a shared file system which
+is accessible by both the live and backup nodes. This means that the servers use the same location for
+their paging, message journal, bindings journal, and large messages in their configuration.
+Typically this shared file system will be some kind of high performance Storage Area Network, or SAN.
+
+NOTE: Red Hat does not recommend using Network Attached Storage, known as a NAS, for your storage solution.
+
+The advantage of shared-store high availability is that no replication occurs between the live and
+backup nodes, this means it does not suffer any performance penalties due to the overhead of
+replication during normal operation.
+The disadvantage of shared store replication is that when the backup server activates it needs to load
+the journal from the shared store which can take some time depending on the amount of data in the store.
+Also, it requires a shared storage solution supported by JBoss EAP.
+
+NOTE: Please note that, for high availability purposes, the live server and the backup server must be installed on two separated physical (or virtual) hosts, provisioned in such a way to minimize the probability of both host failing at the same time. Also, highly available HornetQ requires access to reliable shared file system storage, so a file system such as GFS2 or a SAN must be made available to both hosts.
+
+Francesco Marchioni, one of our fellow Red Hatters who runs the mastertheboss.com website, has a great blog post that explains in details how failover for JMS was setup
+in HornetQ (EAP 6) and the minor change needed for Artermis (EAP 7). The blog post can be located here: http://www.mastertheboss.com/jboss-server/jboss-jms/jms-clustering-in-wildfly-and-jboss-eap[JMS Clustering EAP 7 & Artemis]
+
+.Failover of the Domain Controller
+
+There has been many discussions at Fiserv regarding the necessity of having a domain contoller for failover. The arguments for and against were all valid and we highlight some of them here:
+
+*Arguments Pro Domain Controller Failover*
+
+. No single point of failure is allowed
+. EAP servers in the domain will not restart if their JVM is stopped without a running domain controller
+
+*Arguments Against Domain Controller Failover*
+
+. Having a dedicated host for Domain Controller is expensive
+. Impact of in process configuration when the Domain Controller fails is not high enough to be worried
+. Configurations done on the backup are not persisted back to the primary when it is brought back up
+
+The following Red Hat knowledge base article highlights how a backup domain controller can be configured - https://access.redhat.com/solutions/1247783[High Availability of the Domain Controller]
 
 = Desired Future Architecture
 
-== title
+The following image depicts the future architecture that Fiserv plans to implement. There are still on going discussions as to whether using F5 as a load balancing technology between the DMZ and protected
+zone. If the F5 is selected then the Undertow load balancers will reside in the protected area as well, and the communication protocol between them and the JBoss EAP application servers will be over UDP.
+
+[[img_eap_arch]]
+.Desired High Availability EAP 7 Architecture
+image::../images/desired_EAP7_architecture.png[desired_eap_arch,1000,1000,align="center"]
+
 
 = Installation Mechanisms & Configuration Considerations
 
-== title
+COTS Install:
+
+## Build an RPM + Channel
+
+- RPM installs jboss eap 7 zip file on the filesystems as is
+- RPM creates a custom log directory
+- RPM creates a customer deploy directory
+- RPM registers the startup with etcd/init.d
+- RPM adds SELinux Policy
+- RPM lays down the jboss-eap.conf file that has all variables defined
+- Extra required properties in configuration file:
+	*mutilcast address for modcluster to load balancer
+	*multicast address for jgroups
+	*location of custom deployments directory (already predefined, just replace)
+	*location of custom server log directory (already predefined just replace)
+-RPM startup script will pass in all the required -D jvm flags from above property list and the management IP as well as the bind IP. Startup script would have to specify the --backup flag if the domain controller is being setup with failover
+- RPM will have a polished domain.xml and host.xml that do not have the default shipped server groups, or default servers or the non full-ha or non ha profiles (remove default and full profiles)
+
+
+ ## Bring everything Up
+
+ - All the servers are running serverless as a domain controller with no host attached
+ - CLI into each separate host and run the CLI command to make it a remote host:
+ ='/host=master:write-remote-domain-controller(port=9999, host={DC_IP})'
+
+ If a remote host ever needs to be converted back to a domain controller you would run: /host=master:write-local-domain-controller()
+
+ - restart all the remote hosts
