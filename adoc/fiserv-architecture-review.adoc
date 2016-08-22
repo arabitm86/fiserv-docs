@@ -544,7 +544,7 @@ Queues and topics can be created similar to the following command:
 
 `/profile=full-ha/subsystem=messaging-activemq/server=default/jms-queue=MyQueue:add(entries=["java:/jms/myQueue"])`
 
-Whehter a Queue and a Toopic are exposed internal or external to the JVM depends on what connection factories are used to connect to the server. To access
+Whether a Queue and a Toopic are exposed internal or external to the JVM depends on what connection factories are used to connect to the server. To access
 the queue remotely, developers must connect to the remote connection factory and then access the Queue via its jndi
 
 The command to create a topic is similar. Replace the `jms-queue` part with `jms-topic`
